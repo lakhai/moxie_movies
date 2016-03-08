@@ -6,16 +6,22 @@
  * Version: 1
  * Author URI: http://lakhai.in/
  */
-global $instance;
-$instance = new MoxieMovie();
+global $moxie_movies;
+$moxie_movies = new MoxieMovie();
 
 class MoxieMovie {
+
 	public function __construct() {
 		add_action( 'init', array( $this, 'add_post_type' ) );
 		add_action( 'add_meta_boxes', function() {
 			add_meta_box( 'moxie_meta_box', 'Movie Information', array( $this, 'meta_box' ), 'movie', 'normal', 'high' );
 		});
 		add_action( 'save_post', array( $this, 'save_movie_info' ) );
+		add_action( 'save_post', array( $this, 'update_json' ) );
+		add_action( 'trash_post', array( $this, 'update_json' ) );
+		add_action( 'untrash_post', array( $this, 'update_json' ) );
+
+		add_shortcode( 'list-movies', array( $this, 'print_movies' ) );
 	}
 
 	public function add_post_type() {
@@ -58,13 +64,13 @@ class MoxieMovie {
 	public function meta_box() {
 		global $post;
 
-		$movie_info = $this->get_movie_info( $post->ID );
+		$movie_info = MoxieMovie::get_movie_info( $post->ID );
 	?>
 		<input type="hidden" name="movie_nonce" id="movie_nonce" value="<?php echo wp_create_nonce( 'movie_nonce' ); ?>">
 		<label for="poster_url"><?php echo __( 'Poster URL', 'moxie' ); ?></label>
 		<input id="poster_url" type="text" value="<?php echo $movie_info['poster_url']; ?>" name="movie[poster_url]"><br>
 		<label for="year"><?php echo __( 'Year', 'moxie' ); ?></label>
-		<input id="year" type="date" value="<?php echo $movie_info['year']; ?>" name="movie[year]"><br>
+		<input id="year" type="year" value="<?php echo $movie_info['year']; ?>" name="movie[year]"><br>
 		<label for="rating"><?php echo __( 'Rating', 'moxie' ); ?></label>
 		<input id="rating" name="movie[rating]" type="number" max="5" min="1" value="<?php echo $movie_info['rating']; ?>"><br>
 		<label for="description"><?php echo __( 'Description', 'moxie' ); ?></label><br>
@@ -86,6 +92,10 @@ class MoxieMovie {
 	}
 
 	public function save_movie_info($id) {
+		if ( 'movie' != $_POST['post_type'] ) {
+			return false;
+		}
+
 		if ( ! wp_verify_nonce( $_POST['movie_nonce'], 'movie_nonce' ) ) {
 			return false;
 		}
@@ -99,13 +109,13 @@ class MoxieMovie {
 
 	static function get_movies() {
 		$movies = array();
-		$posts  = get_posts( array( 'post_type' => 'movie', 'posts_per_page' => 20 ) );
+		$posts  = get_posts( array( 'post_type' => 'movie', 'posts_per_page' => 20, 'post_status' => 'publish' ) );
 
 		if ( is_array( $posts ) && ! empty( $posts ) ) {
 			foreach ( $posts as $post ) {
 				setup_postdata($post);
 
-				$current_movie			= $this->get_movie_info( $post->ID );
+				$current_movie			= MoxieMovie::get_movie_info( $post->ID );
 				$current_movie['id'] 	= $post->ID;
 				$current_movie['title'] = $post->post_title;
 
@@ -116,5 +126,55 @@ class MoxieMovie {
 		return $movies;
 	}
 
+	public function update_json() {
+		if ( isset( $_GET['action'] ) && ( 'trash' == $_GET['action'] || 'untrash' == $_GET['action'] ) ) {
+			if ( ! isset( $_GET['post'] ) || 'movie' != get_post_type( $_GET['post'] ) ) {
+				return false;
+			}
+		} else {
+			if ( ! isset( $_POST['post_type'] ) || 'movie' != $_POST['post_type'] ) {
+				return false;
+			}
+		}
+
+		$movies    = MoxieMovie::get_movies();
+		$json_file = file_put_contents( ABSPATH . 'movies.json', json_encode( $movies ) );
+	}
+
+	function print_movies() {
+		$movies = MoxieMovie::get_movies();
+		if ( is_array( $movies ) && ! empty( $movies ) ) {
+			foreach( $movies as $movie ) { 
+				?>
+				<article id="movie-<?php echo $movie['id']; ?>" class="single">
+					<header class="entry-header">
+						<h1 class="entry-title"><?php echo $movie['title']; ?></h1>
+					</header>
+					<div class="post-thumbnail">
+						<img src="<?php echo $movie['poster_url']; ?>">
+					</div>
+					<div class="entry-content">
+						<p><?php echo $movie['description']; ?></p>
+					</div>
+					<footer class="entry-footer">
+						<span class="byline">Rating: <span class="movie-rating"><?php echo $movie['rating']; ?></span> out of 5</span>
+						<span class="byline">Premiered on <span class="movie-year"><?php echo $movie['year']; ?></span></span>
+					</footer>
+				</article>
+				<?php
+			}
+		} else {
+			?>
+			<section class="no-results not-found">
+				<header class="page-header">
+					<h2 class="page-title">There are no published movies right now!</h2>
+				</header>
+				<div class="page-content">
+					<p>It's a sad day.</p>
+				</div>
+			</section>
+			<?php
+		}
+	}
 
 }
