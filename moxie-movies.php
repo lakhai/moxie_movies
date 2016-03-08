@@ -6,8 +6,12 @@
  * Version: 1
  * Author URI: http://lakhai.in/
  */
+
 global $moxie_movies;
 $moxie_movies = new MoxieMovie();
+
+register_activation_hook( __FILE__, array( 'MoxieMovie', 'install' ) );
+register_deactivation_hook( __FILE__, array( 'MoxieMovie', 'uninstall' ) );
 
 class MoxieMovie {
 
@@ -22,6 +26,34 @@ class MoxieMovie {
 		add_action( 'untrash_post', array( $this, 'update_json' ) );
 
 		add_shortcode( 'list-movies', array( $this, 'print_movies' ) );
+	}
+
+	static function install() {
+		$current_theme = wp_get_theme();
+		if ( 'twentysixteen' == $current_theme->template ) {
+			$page_args = array(
+				'post_title' 	=> 'Movie List',
+				'post_content' 	=> '[list-movies]',
+				'post_status' 	=> 'publish',
+				'post_type' 	=> 'page',
+			);
+
+			$new_page = wp_insert_post($page_args);
+
+			if ( ! is_wp_error( $new_page ) ) {
+				update_option( 'show_on_front', 'page', true );
+				update_option( 'page_on_front', $new_page, true );
+			}
+		}
+	}
+
+	static function uninstall() {
+		$page_id = get_option( 'page_on_front' );
+
+		wp_delete_post( $page_id, true );
+
+		update_option( 'show_on_front', 'posts', true );
+		update_option( 'page_on_front', '', true );
 	}
 
 	public function add_post_type() {
@@ -39,7 +71,7 @@ class MoxieMovie {
 			'search_items'       => __( 'Search Movies', 'moxie' ),
 			'parent_item_colon'  => __( 'Parent Movies:', 'moxie' ),
 			'not_found'          => __( 'No movies found.', 'moxie' ),
-			'not_found_in_trash' => __( 'No movies found in Trash.', 'moxie' )
+			'not_found_in_trash' => __( 'No movies found in Trash.', 'moxie' ),
 		);
 
 		$args = array(
@@ -176,5 +208,5 @@ class MoxieMovie {
 			<?php
 		}
 	}
-
+	
 }
